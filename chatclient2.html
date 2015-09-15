@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+<script>
+/* 
+serverin server2 speksi
+
+sanomarakenne(JSON):
+{ id:id, channel:channel, nickname:nickname, message:message }
+
+1. yhteys avataan: palvelin vastaa JSON-viestillä {"id":"id-merkkijono"}
+2. clientin kuuluu lähettää {id:id,channel=channel,nickname=nickname,message="LIST"}
+   - server saa tiedon kanavasta ja nicknamesta
+   - server lähettää paluuviestin jossa message="LIST,nickname,nickname,.."
+     = kaikki jotka kanavalla
+   - server lähettää kanavalla jo olleille viestin jossa message="JOINED"
+3. client lähettää viestejä kanavalle, ainoa erikoisviesti on "LIST"
+4. clientin kuollessa kanavalle jääneet saavat viestin "KILLED"
+
+HUOM: channel esim. muodossa sovellus-kanava, jottei eri sovellukset
+mene päällekkäin
+
+
+Tässä clientissa chattaillaan, mutta viestit muotoa GAME,x,y,kirjain
+tulkitaan ristinolla-siirroiksi. Varsinaiset pelisäännöt puuttuvat tästä.
+*/
+var socket;
+// palvelin pysyy tässä osoitteessa toistaiseksi
+// voit hyödyntää omissa sovelluksissasi
+var host = "ws://www.anycase.info:9001/";
+var myId="";           // palvelu antaa Id:n
+var mychannel = "";    // itse syötetty kanavan nimi
+var mynickname = "";   // itse syötetty nickname
+
+function login() {
+   try {
+        mychannel = document.f.channel.value;
+		mynickname = document.f.nickname.value;
+		
+		socket = new WebSocket(host);       // yritetään yhteyttä
+		document.f.txt.value += 'WebSocket - status '+socket.readyState+"\n";
+		socket.onopen    = function(msg) {
+		                       // yhteys onnistui
+							   document.f.txt.value += "Welcome - status "+this.readyState+"\n"; 
+						   };
+		socket.onmessage = listen;   // listen-funktio (alla) kuuntelee socketia
+		socket.onclose   = function(msg) { 
+		                       // yhteys sulkeutuu
+							   document.f.txt.value += "Disconnected - status "+this.readyState+"\n"; 
+						   };
+	}
+	catch(ex){ 
+		alert(ex);   // jokin meni vikaan
+	}
+}
+
+// lähetä-toiminto
+function sendmsg(m) {
+   // muodostetaan viestiolio
+   var msg = { id      : myId, 
+               channel : mychannel, 
+			   nickname: mynickname,
+               message : m }
+   // huom. jos viestit ovat rakenteisia, voit JSON-encode:ta message-kentän
+   // lähetetään putkeen JSON-muodossa
+   socket.send(JSON.stringify(msg));
+}
+
+// dataa saapuu
+function listen(message) {
+   try {
+      // oletus: JSON-muodossa
+      var m = JSON.parse(message.data);  // muista: message.data
+   } catch(ex) { alert(ex); return; }	  
+   if (myId=="") {   // ei myId:tä: ensimmäinen sanoma, tulee vain id 
+      myId = m.id;
+      document.f.txt.value += "Sait id:n " + myId + "\n";
+      sendmsg("LIST");   // kuuluu lähettää heti aluksi
+   } else {          // tavallinen chat-viesti
+	  document.f.txt.value += m.nickname + ": " + m.message + "\n";
+      // onko peliviesti (ruudun koordinaatit) ?
+      var s = m.message.split(",");
+      if (s[0] == "GAME") {
+         spot(s[1],s[2],s[3]);   // sijoita pelimerkki ruudukkoon
+      }
+   }   
+}
+function logout(){
+	if (socket != null) {
+		document.f.txt.value +="Goodbye!\n";
+		socket.close();
+		socket=null;
+		myId="";
+	}
+}
+
+// canvas (ristinolla)
+var canvas = null;
+var context = null;
+var player = "X";
+
+function alusta() // piirrä 3x3 ruudukko
+{  canvas = document.getElementById('canvas'),
+   context = canvas.getContext('2d');
+   canvas.addEventListener("click",klik,false);
+   context.beginPath();  
+   context.moveTo(50,0);
+   context.lineTo(50,150);
+   context.moveTo(100,0);
+   context.lineTo(100,150);
+   context.moveTo(0,50);
+   context.lineTo(150,50);
+   context.moveTo(0,100);
+   context.lineTo(150,100);
+   context.stroke();
+}
+
+function klik(evt) {
+   var rect = canvas.getBoundingClientRect();
+   var x = evt.pageX-rect.left;
+   var y = evt.pageY-rect.top;
+   pos_x = Math.floor(x/50) + 1;    // x=1..3  ja y=1..3
+   pos_y = Math.floor(y/50) + 1;
+   spot(pos_x,pos_y,mynickname[0]); // sijoita pelimerkki (nimen alkukirjain)
+   // sijoita myös kaverin laudalle
+   sendmsg("GAME," + pos_x + "," + pos_y + "," + mynickname[0]); 
+}
+
+function spot(x,y,p) {   // pelimerkin sijoitus
+   canv_x = x * 50 - 40;
+   canv_y = y * 50 - 10;
+   context.font = '30pt Arial';
+   context.fillStyle = 'black';
+   context.fillText(p, canv_x,canv_y);  
+}
+
+
+</script>
+</head>
+<body onLoad="alusta()">
+<b>chat client</b><br/>
+<form name="f" onSubmit="return false">
+kanava: <input type="text" name="channel"><br/>
+nickname: <input type="text" name="nickname"><br/>
+<button name="login_btn" onClick="login()">kirjaudu sisaan</button> *
+<button name="logout_btn" onClick="logout()">kirjaudu ulos</button><br/>
+<textarea name="txt" cols="60" rows="8"></textarea><br/>
+<input type="text" name="msg" size="40">
+<button name="sendmsg_btn" onClick="sendmsg(document.f.msg.value)">laheta</button>
+</form>
+<hr/>
+<canvas width="150" height="150" id="canvas"></canvas>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+<script>
+// server behavior:
+// 1. handshake: responds with JSON string {"id":"id-string"}
+// 2. other messages: echos back to everyone
+// -- client's responsibility is to define channels, nicknames etc.
+
+var socket;
+// you may use this one
+var host = "ws://www.anycase.info:9000/";
+var myId="";           // server yields
+var mychannel = "";    // user input
+var mynickname = "";   // user input
+
+function login() {
+   try {
+        mychannel = document.f.channel.value;
+		mynickname = document.f.nickname.value;
+		
+		socket = new WebSocket(host);       // try to connect
+		document.f.txt.value += 'WebSocket - status '+socket.readyState+"\n";
+		socket.onopen    = function(msg) {
+		                       // success
+							   document.f.txt.value += "Welcome - status "+this.readyState+"\n"; 
+						   };
+		socket.onmessage = listen;   // listener function (see below)
+		socket.onclose   = function(msg) { 
+		                       // disconnect
+							   document.f.txt.value += "Disconnected - status "+this.readyState+"\n"; 
+						   };
+	}
+	catch(ex){ 
+		alert(ex);   // something went wrong
+	}
+}
+
+
+function sendmsg() {
+   // create message record
+   var msg = { id      : myId, 
+               channel : mychannel, 
+			   nickname: mynickname,
+               message : document.f.msg.value }
+   // put to socket in JSON format
+   socket.send(JSON.stringify(msg));
+}
+
+// data received
+function listen(message) {
+   try {
+      // assumed to be JSON
+      var m = JSON.parse(message.data);  // note: message.data
+   } catch(ex) { alert(ex); return; }	  
+   if (myId=="") {   // no myId: initial message, Id received
+      myId = m.id;
+      document.f.txt.value += "Sait id:n " + myId + "\n";
+   } else {          // tavallinen chat-viesti
+      if (m.channel == mychannel)   // is it our channel (should be in any way)
+	  document.f.txt.value += m.nickname + ": " + m.message + "\n";
+   }   
+}
+function logout(){
+	if (socket != null) {
+		document.f.txt.value +="Goodbye!\n";
+		socket.close();
+		socket=null;
+		myId="";
+	}
+}
+</script>
+</head>
+<body>
+<b>chat client</b><br/>
+<form name="f" onSubmit="return false">
+kanava: <input type="text" name="channel"><br/>
+nickname: <input type="text" name="nickname"><br/>
+<button name="login_btn" onClick="login()">kirjaudu sisaan</button> *
+<button name="logout_btn" onClick="logout()">kirjaudu ulos</button><br/>
+<textarea name="txt" cols="60" rows="8"></textarea><br/>
+<input type="text" name="msg" size="40">
+<button name="sendmsg_btn" onClick="sendmsg()">laheta</button>
+</form>
+</body>
+</html>
